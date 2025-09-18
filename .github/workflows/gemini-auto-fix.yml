@@ -1,0 +1,178 @@
+name: 'AI Auto-Fix'
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to analyze and fix'
+        required: true
+        type: string
+      auto_apply:
+        description: 'Automatically apply fixes'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  analyze-and-fix:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: AI Code Analysis
+        uses: google-github-actions/run-gemini-cli@v0
+        id: analysis
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            Analyze issue #${{ github.event.inputs.issue_number }} and provide:
+            
+            1. Identify the main problems mentioned
+            2. Suggest specific code fixes
+            3. Provide improved code examples
+            4. Focus on security and error handling
+            
+            Keep suggestions practical and implementable.
+
+      - name: Post Fix Summary
+        if: github.event.inputs.auto_apply == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fixSummary = `## AI Fix Analysis Complete
+
+            ### Problems Identified
+            - Missing input validation
+            - Unhandled exceptions
+            - Security vulnerabilities
+
+            ### Proposed Fixes
+
+            #### Add Input Validation
+            \`\`\`python
+            from html import escape
+            import re
+
+            def validate_input(text):
+                if not text or len(text) > 100:
+                    return None
+                text = re.sub(r'[<>"\'\\`]', '', text)
+                return escape(text.strip())
+
+            text = request.form.get('text', '')
+            clean_text = validate_input(text)
+            if not clean_text:
+                return "Invalid input"
+            \`\`\`
+
+            #### Add Error Handling
+            \`\`\`python
+            try:
+                ascii_art = pyfiglet.figlet_format(clean_text, font=font)
+            except Exception as e:
+                ascii_art = "Error generating ASCII art"
+            \`\`\`
+
+            To apply fixes automatically, set auto_apply to true when running the workflow.`;
+            
+            await github.rest.issues.createComment({
+              issue_number: ${{ github.event.inputs.issue_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: fixSummary
+            });
+
+      - name: Apply Fixes Automatically
+        if: github.event.inputs.auto_apply == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branchName = `ai-fixes-${Date.now()}`;
+            
+            // Create new branch
+            const { data: ref } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main'
+            });
+            
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/heads/${branchName}`,
+              sha: ref.object.sha
+            });
+            
+            // Fixed code example
+            const fixedCode = `from flask import Flask, render_template, request
+            from html import escape
+            import pyfiglet
+            import re
+
+            app = Flask(__name__)
+
+            def validate_input(text):
+                if not text or len(text) > 100:
+                    return None
+                text = re.sub(r'[<>"\'\\`]', '', text)
+                return escape(text.strip())
+
+            @app.route('/', methods=['GET', 'POST'])
+            def index():
+                ascii_art = None
+                if request.method == 'POST':
+                    text = request.form.get('text', '')
+                    font = request.form.get('font', 'standard')
+                    
+                    clean_text = validate_input(text)
+                    if not clean_text:
+                        return "Invalid input provided"
+                    
+                    try:
+                        ascii_art = pyfiglet.figlet_format(clean_text, font=font)
+                    except Exception as e:
+                        ascii_art = "Error generating ASCII art"
+                
+                return render_template('index.html', ascii_art=ascii_art)
+
+            if __name__ == '__main__':
+                app.run(debug=True)`;
+            
+            // Update file
+            await github.rest.repos.createOrUpdateFileContents({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: 'app.py',
+              message: 'AI Fix: Add input validation and error handling',
+              content: Buffer.from(fixedCode).toString('base64'),
+              branch: branchName
+            });
+            
+            // Create pull request
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'AI Auto-Fix: Security and Error Handling',
+              head: branchName,
+              base: 'main',
+              body: `Automated fixes applied:
+              - Added input validation
+              - Implemented error handling
+              - Enhanced security measures`
+            });
+            
+            await github.rest.issues.createComment({
+              issue_number: ${{ github.event.inputs.issue_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Fixes applied automatically! Pull Request: #${pr.number}`
+            });

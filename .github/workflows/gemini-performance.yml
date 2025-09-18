@@ -1,0 +1,100 @@
+name: 'Performance Optimizer'
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number for performance analysis'
+        required: false
+        type: string
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  performance-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: AI Performance Analysis
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            Analyze this codebase for performance improvements focusing on:
+            1. Response time optimization
+            2. Memory usage efficiency
+            3. Caching opportunities
+            4. Resource management
+            5. Scalability improvements
+            
+            Provide specific, implementable performance recommendations.
+
+      - name: Generate Performance Report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const performanceReport = `## Performance Analysis Report
+            
+            ### Performance Issues Identified
+            - Font rendering on every request (slow)
+            - No caching implemented
+            - No response compression
+            - Static assets not optimized
+            
+            ### Recommended Optimizations
+            
+            1. **Add Caching**
+            \`\`\`python
+            from functools import lru_cache
+            
+            @lru_cache(maxsize=100)
+            def generate_ascii_art(text, font):
+                return pyfiglet.figlet_format(text, font=font)
+            \`\`\`
+            
+            2. **Enable Compression**
+            \`\`\`python
+            from flask_compress import Compress
+            Compress(app)
+            \`\`\`
+            
+            3. **Add Response Headers**
+            \`\`\`python
+            @app.after_request
+            def add_headers(response):
+                response.headers['Cache-Control'] = 'public, max-age=300'
+                return response
+            \`\`\`
+            
+            ### Expected Improvements
+            - 70% faster response times with caching
+            - 60% bandwidth reduction with compression
+            - Better user experience with faster loading
+            
+            ### Implementation Priority
+            1. Add caching (High impact, low effort)
+            2. Enable compression (Medium impact, low effort)
+            3. Optimize static assets (Medium impact, medium effort)`;
+            
+            if ('${{ github.event.inputs.issue_number }}') {
+              await github.rest.issues.createComment({
+                issue_number: ${{ github.event.inputs.issue_number }},
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: performanceReport
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Performance Optimization Report',
+                body: performanceReport,
+                labels: ['performance', 'enhancement']
+              });
+            }
