@@ -1,0 +1,133 @@
+name: 'AI Assistant Dispatcher'
+
+on:
+  workflow_dispatch:
+    inputs:
+      action_type:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - 'triage-issue'
+          - 'review-pr'
+          - 'security-scan'
+          - 'performance-check'
+          - 'quality-check'
+          - 'auto-fix'
+      issue_number:
+        description: 'Issue or PR number'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  dispatch-action:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Trigger Security Scan
+        if: github.event.inputs.action_type == 'security-scan'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'gemini-security-scanner.yml',
+              ref: 'main',
+              inputs: {
+                issue_number: '${{ github.event.inputs.issue_number }}'
+              }
+            });
+
+      - name: Trigger Performance Check
+        if: github.event.inputs.action_type == 'performance-check'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'gemini-performance.yml',
+              ref: 'main',
+              inputs: {
+                issue_number: '${{ github.event.inputs.issue_number }}'
+              }
+            });
+
+      - name: Trigger Quality Check
+        if: github.event.inputs.action_type == 'quality-check'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'gemini-code-quality.yml',
+              ref: 'main',
+              inputs: {
+                issue_number: '${{ github.event.inputs.issue_number }}'
+              }
+            });
+
+      - name: Trigger Auto-Fix
+        if: github.event.inputs.action_type == 'auto-fix'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'gemini-auto-fix.yml',
+              ref: 'main',
+              inputs: {
+                issue_number: '${{ github.event.inputs.issue_number }}',
+                auto_apply: 'false'
+              }
+            });
+
+      - name: Simple Issue Triage
+        if: github.event.inputs.action_type == 'triage-issue'
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            Analyze GitHub issue #${{ github.event.inputs.issue_number }} and provide:
+            1. Issue category (bug/feature/enhancement)
+            2. Priority level (high/medium/low)
+            3. Recommended labels
+            4. Brief analysis and next steps
+            
+            Keep response concise and actionable.
+
+      - name: Simple PR Review
+        if: github.event.inputs.action_type == 'review-pr'
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            Review pull request #${{ github.event.inputs.issue_number }} and provide:
+            1. Code quality assessment
+            2. Security concerns
+            3. Performance issues
+            4. Improvement suggestions
+            
+            Focus on critical issues only.
+
+      - name: Post Results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: ${{ github.event.inputs.issue_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: 'AI Analysis completed for action: ${{ github.event.inputs.action_type }}'
+            });

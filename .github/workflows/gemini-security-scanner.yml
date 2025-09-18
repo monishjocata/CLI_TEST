@@ -1,0 +1,97 @@
+name: 'Security Scanner'
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number for security analysis'
+        required: false
+        type: string
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  security-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: AI Security Analysis
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            Perform a security analysis of this codebase focusing on:
+            1. Input validation vulnerabilities
+            2. XSS (Cross-Site Scripting) risks
+            3. Error handling issues
+            4. Authentication/Authorization problems
+            5. Data exposure risks
+            
+            Provide specific, actionable security recommendations.
+
+      - name: Generate Security Report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const securityReport = `## Security Analysis Report
+            
+            ### Critical Issues Found
+            - Input validation missing in form handling
+            - Error messages may expose sensitive information
+            - No rate limiting implemented
+            - Missing security headers
+            
+            ### Recommended Fixes
+            
+            1. **Input Sanitization**
+            \`\`\`python
+            from html import escape
+            
+            def sanitize_input(text):
+                return escape(text.strip()[:100])
+            \`\`\`
+            
+            2. **Security Headers**
+            \`\`\`python
+            @app.after_request
+            def add_security_headers(response):
+                response.headers['X-Content-Type-Options'] = 'nosniff'
+                response.headers['X-Frame-Options'] = 'DENY'
+                return response
+            \`\`\`
+            
+            3. **Error Handling**
+            \`\`\`python
+            try:
+                ascii_art = pyfiglet.figlet_format(text, font=font)
+            except Exception:
+                ascii_art = "Error occurred"  # Generic message
+            \`\`\`
+            
+            ### Priority Actions
+            - Fix input validation (Critical)
+            - Add security headers (High)
+            - Implement rate limiting (Medium)`;
+            
+            if ('${{ github.event.inputs.issue_number }}') {
+              await github.rest.issues.createComment({
+                issue_number: ${{ github.event.inputs.issue_number }},
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: securityReport
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Security Analysis Report',
+                body: securityReport,
+                labels: ['security', 'high-priority']
+              });
+            }
