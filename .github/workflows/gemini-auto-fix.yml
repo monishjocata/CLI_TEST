@@ -113,7 +113,11 @@ jobs:
             });
             
             // Fixed code example
+
             const fixedCode = `from flask import Flask, render_template, request
+
+            const fixedCode = `from flask import Flask, render_template, request
+
             from html import escape
             import pyfiglet
             import re
