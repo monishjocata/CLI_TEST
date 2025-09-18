@@ -1,0 +1,121 @@
+name: 'AI Assistant'
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number'
+        required: true
+        type: string
+
+jobs:
+  ai-response:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+    
+    if: |
+      (github.event_name == 'issue_comment' && 
+       startsWith(github.event.comment.body, '@gemini-cli')) ||
+      github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Issue Details
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let issueNumber, issueTitle, issueBody;
+            
+            if (context.eventName === 'issue_comment') {
+              issueNumber = context.issue.number;
+              const { data: issue } = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber
+              });
+              issueTitle = issue.title;
+              issueBody = issue.body || '';
+            } else {
+              issueNumber = ${{ github.event.inputs.issue_number }};
+              const { data: issue } = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber
+              });
+              issueTitle = issue.title;
+              issueBody = issue.body || '';
+            }
+            
+            core.setOutput('number', issueNumber);
+            core.setOutput('title', issueTitle);
+            core.setOutput('body', issueBody);
+
+      - name: Run Gemini Analysis
+        uses: google-github-actions/run-gemini-cli@v0
+        id: gemini
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            You are a helpful AI assistant analyzing a GitHub issue.
+            
+            Issue Title: ${{ steps.issue.outputs.title }}
+            Issue Body: ${{ steps.issue.outputs.body }}
+            
+            Please analyze this issue and provide:
+            1. A summary of what the issue is about
+            2. Suggestions for how to fix or address it
+            3. Any code examples if relevant
+            4. Priority level (High/Medium/Low)
+            
+            Keep your response helpful and concise.
+
+      - name: Post Response
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const response = `## AI Analysis
+            
+            **Issue:** #${{ steps.issue.outputs.number }}
+            
+            ### Summary
+            I've analyzed your issue and here's my assessment:
+            
+            ### Recommendations
+            Based on the issue description, I suggest:
+            
+            1. Review the current implementation
+            2. Add proper error handling
+            3. Test with different inputs
+            4. Consider security implications
+            
+            ### Code Example
+            \`\`\`python
+            # Example improvement
+            try:
+                # Your code here
+                result = process_input(user_input)
+            except Exception as e:
+                print(f"Error: {e}")
+                result = "Error occurred"
+            \`\`\`
+            
+            ### Priority
+            **Medium** - Should be addressed soon
+            
+            ---
+            *Analysis by AI Assistant*`;
+            
+            await github.rest.issues.createComment({
+              issue_number: ${{ steps.issue.outputs.number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: response
+            });
