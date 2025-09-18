@@ -149,6 +149,10 @@ jobs:
               repo: context.repo.repo,
               body: message
             });
+
+      - name: Analyze Issue with Gemini
+        if: steps.action-type.outputs.action == 'triage-issue'
+        uses: google-github-actions/run-gemini-cli@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
